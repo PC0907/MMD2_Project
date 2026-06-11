@@ -194,16 +194,29 @@ def _evaluate_file(cfg: dict, pred_path: Path, df: pd.DataFrame) -> None:
 
     metrics = {
         "clarity": evaluate_clarity(merged["clarity_true"], merged["clarity_pred"]),
-        "evasion": evaluate_evasion(merged["evasion_true"], merged["evasion_pred"]),
-        "hard_cases": boundary_report(merged),
     }
+    # The official test split ships without fine-grained (Level 2) gold,
+    # so evasion can only be scored where gold labels exist (train/dev).
+    if "evasion_true" in merged.columns and merged["evasion_true"].notna().all():
+        metrics["evasion"] = evaluate_evasion(
+            merged["evasion_true"], merged["evasion_pred"]
+        )
+    else:
+        metrics["evasion"] = {"skipped": "no gold evasion labels in this split"}
+
+    metrics["hard_cases"] = boundary_report(merged)
     if "qud_overlap" in merged.columns and merged["qud_overlap"].notna().any():
         metrics["overlap_vs_error"] = overlap_vs_error(merged).to_dict(orient="records")
 
     out = pred_path.with_name(pred_path.stem.replace("_predictions", "_metrics") + ".json")
     save_metrics(metrics, out)
-    logger.info("Clarity Macro-F1: %.4f | Evasion Macro-F1: %.4f  ->  %s",
-                metrics["clarity"]["macro_f1"], metrics["evasion"]["macro_f1"], out)
+    ev = metrics["evasion"].get("macro_f1")
+    logger.info(
+        "Clarity Macro-F1: %.4f | Evasion Macro-F1: %s  ->  %s",
+        metrics["clarity"]["macro_f1"],
+        f"{ev:.4f}" if ev is not None else "n/a (no gold)",
+        out,
+    )
 
 
 def cmd_evaluate(cfg: dict, args) -> None:

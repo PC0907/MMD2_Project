@@ -88,10 +88,12 @@ def normalize_clarity(label: str) -> str:
     raise ValueError(f"Unknown clarity label: {label!r}")
 
 
-def normalize_evasion(label: str) -> str:
+def normalize_evasion(label: str) -> str | None:
     key = str(label).strip().lower()
     if key in _EVASION_ALIASES:
         return _EVASION_ALIASES[key]
+    if key in ("", "nan", "none"):
+        return None  # fine-grained label absent (e.g. official test split)
     raise ValueError(f"Unknown evasion label: {label!r}")
 
 

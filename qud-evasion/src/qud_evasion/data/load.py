@@ -63,6 +63,13 @@ def load_qevasion(cache_dir: str | None = None) -> dict[str, pd.DataFrame]:
         df = df[[c for c in KEEP_COLUMNS if c in df.columns]].copy()
         df["clarity_label"] = df["clarity_label"].map(normalize_clarity)
         df["evasion_label"] = df["evasion_label"].map(normalize_evasion)
+        n_missing_evasion = df["evasion_label"].isna().sum()
+        if n_missing_evasion:
+            logger.warning(
+                "%s: %d/%d rows have no fine-grained evasion label; "
+                "evasion-level metrics will be skipped for this split.",
+                name, n_missing_evasion, len(df),
+            )
         df["turn_id"] = df.apply(_turn_id, axis=1)
         df["interview_id"] = df["url"].map(
             lambda u: hashlib.md5(str(u).encode()).hexdigest()[:12]
