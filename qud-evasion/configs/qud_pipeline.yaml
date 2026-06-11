@@ -13,6 +13,6 @@ max_quds: 3
 use_embedding_features: true
 use_nli_features: true
 embedding_model: sentence-transformers/all-mpnet-base-v2
-nli_model: microsoft/deberta-v3-large-mnli
+nli_model: MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli
 # Stage 3: "rule" (zero-parameter taxonomy rules) or "learned" (HGB head)
 head: rule
