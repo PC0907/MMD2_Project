@@ -1,8 +1,8 @@
 inherit: base.yaml
 output_dir: outputs/qud
-llm_model: meta-llama/Llama-3.3-70B-Instruct   # same backbone as baseline_llm
+llm_model: Qwen/Qwen3.5-4B   # same backbone as baseline_llm
 llm_cache: outputs/llm_cache.sqlite            # shared cache across runs
-tensor_parallel: 4
+tensor_parallel: 2
 max_model_len: 8192
 temperature: 0.0
 max_tokens: 512
