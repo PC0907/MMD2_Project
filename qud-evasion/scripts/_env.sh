@@ -20,5 +20,5 @@ export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 
 cd "$PROJECT_DIR"
-source .venv/bin/activate
+source ~/mmd2/bin/activate
 mkdir -p logs outputs
