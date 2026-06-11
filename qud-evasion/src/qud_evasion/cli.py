@@ -1,0 +1,242 @@
+"""Command-line interface. One subcommand per pipeline stage so that
+shell scripts stay one-liners and every run is reproducible from a YAML
+config.
+
+    python -m qud_evasion.cli prepare-data  --config configs/base.yaml
+    python -m qud_evasion.cli train-encoder --config configs/baseline_encoder.yaml
+    python -m qud_evasion.cli llm-baseline  --config configs/baseline_llm.yaml --split dev
+    python -m qud_evasion.cli qud-pipeline  --config configs/qud_pipeline.yaml --split dev
+    python -m qud_evasion.cli evaluate --pred outputs/qud/dev_predictions.jsonl --split dev
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+from pathlib import Path
+
+import pandas as pd
+
+from .utils import load_config, seed_everything, setup_logging
+
+logger = logging.getLogger("qud_evasion.cli")
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+def _load_split(cfg: dict, split: str) -> pd.DataFrame:
+    from .data.load import load_processed
+
+    dfs = load_processed(cfg["data_dir"])
+    if split not in dfs:
+        raise SystemExit(
+            f"Split {split!r} not found in {cfg['data_dir']} "
+            f"(available: {sorted(dfs)}). Run prepare-data first."
+        )
+    if split == "official_test":
+        logger.warning(
+            "You are loading the OFFICIAL test set. Per protocol this is "
+            "evaluated exactly once, at the very end."
+        )
+    return dfs[split]
+
+
+def _make_client(cfg: dict):
+    from .qud.llm_client import LLMClient
+
+    return LLMClient(
+        model_name=cfg["llm_model"],
+        cache_path=cfg.get("llm_cache", "outputs/llm_cache.sqlite"),
+        tensor_parallel=cfg.get("tensor_parallel", 1),
+        max_model_len=cfg.get("max_model_len", 8192),
+        temperature=cfg.get("temperature", 0.0),
+        max_tokens=cfg.get("max_tokens", 512),
+        seed=cfg.get("seed", 13),
+    )
+
+
+# ---------------------------------------------------------------------------
+# subcommands
+# ---------------------------------------------------------------------------
+
+def cmd_prepare_data(cfg: dict, args) -> None:
+    from .data.load import load_qevasion, save_processed
+    from .data.splits import interview_level_split
+
+    dfs = load_qevasion(cache_dir=cfg.get("hf_cache_dir"))
+    train, dev = interview_level_split(
+        dfs["train"],
+        dev_fraction=cfg.get("dev_fraction", 0.10),
+        seed=cfg.get("seed", 13),
+    )
+    save_processed(
+        {"train": train, "dev": dev, "official_test": dfs["official_test"]},
+        cfg["data_dir"],
+    )
+
+
+def cmd_train_encoder(cfg: dict, args) -> None:
+    from .baselines.encoder import train_encoder
+    from .eval.metrics import save_metrics
+
+    train = _load_split(cfg, "train")
+    dev = _load_split(cfg, "dev")
+    for target in cfg.get("targets", ["evasion", "clarity"]):
+        out_dir = Path(cfg["output_dir"]) / target
+        result = train_encoder(
+            train, dev,
+            target=target,
+            model_name=cfg.get("encoder_model", "microsoft/deberta-v3-large"),
+            output_dir=out_dir,
+            max_length=cfg.get("max_length", 512),
+            lr=cfg.get("lr", 1e-5),
+            epochs=cfg.get("epochs", 5),
+            batch_size=cfg.get("batch_size", 8),
+            grad_accum=cfg.get("grad_accum", 4),
+            seed=cfg.get("seed", 13),
+        )
+        save_metrics(result["metrics"], out_dir / "dev_metrics.json")
+
+
+def cmd_llm_baseline(cfg: dict, args) -> None:
+    from .baselines.llm_prompting import run_direct_baseline
+
+    df = _load_split(cfg, args.split)
+    few_shot = _load_split(cfg, "train") if cfg.get("few_shot", True) else None
+    client = _make_client(cfg)
+    out = Path(cfg["output_dir"]) / f"{args.split}_predictions.jsonl"
+    run_direct_baseline(
+        df, client, out,
+        few_shot_train=few_shot,
+        k_per_class=cfg.get("k_per_class", 1),
+        seed=cfg.get("seed", 13),
+    )
+    _evaluate_file(cfg, out, df)
+
+
+def cmd_qud_pipeline(cfg: dict, args) -> None:
+    from .qud.classify import LearnedClassifier, RuleClassifier
+    from .qud.reconstruct import reconstruct_quds
+    from .qud.relations import (aggregate_per_example, embedding_features,
+                                llm_relations, nli_features)
+
+    df = _load_split(cfg, args.split)
+    client = _make_client(cfg)
+    out_dir = Path(cfg["output_dir"])
+
+    recon = reconstruct_quds(
+        df, client, out_dir / f"{args.split}_stage1_quds.jsonl",
+        max_quds=cfg.get("max_quds", 3),
+    )
+    pairs = llm_relations(df, recon, client, out_dir / f"{args.split}_stage2_pairs.jsonl")
+    if cfg.get("use_embedding_features", True) and len(pairs):
+        pairs = embedding_features(pairs, cfg.get("embedding_model",
+                                   "sentence-transformers/all-mpnet-base-v2"))
+    if cfg.get("use_nli_features", True) and len(pairs):
+        pairs = nli_features(pairs, cfg.get("nli_model",
+                             "microsoft/deberta-v3-large-mnli"))
+    agg = aggregate_per_example(pairs, recon)
+    agg.to_json(out_dir / f"{args.split}_stage2_agg.jsonl", orient="records", lines=True)
+
+    head = cfg.get("head", "rule")
+    if head == "rule":
+        clf = RuleClassifier(client=client)
+    elif head == "learned":
+        model_path = out_dir / "learned_head.joblib"
+        if args.split == "train":
+            raise SystemExit("Run the learned head on dev/test; it trains on train internally.")
+        if not model_path.exists():
+            logger.info("Training learned head on train split features...")
+            train_df = _load_split(cfg, "train")
+            train_recon = reconstruct_quds(
+                train_df, client, out_dir / "train_stage1_quds.jsonl",
+                max_quds=cfg.get("max_quds", 3),
+            )
+            train_pairs = llm_relations(train_df, train_recon, client,
+                                        out_dir / "train_stage2_pairs.jsonl")
+            if cfg.get("use_embedding_features", True):
+                train_pairs = embedding_features(train_pairs)
+            if cfg.get("use_nli_features", True):
+                train_pairs = nli_features(train_pairs)
+            train_agg = aggregate_per_example(train_pairs, train_recon)
+            clf = LearnedClassifier().fit(
+                train_df.merge(train_agg, on="example_id")[train_agg.columns],
+                train_df["evasion_label"],
+            )
+            clf.save(model_path)
+        else:
+            clf = LearnedClassifier.load(model_path)
+    else:
+        raise SystemExit(f"Unknown head: {head}")
+
+    merged = clf.predict(df, agg)
+    pred_path = out_dir / f"{args.split}_predictions.jsonl"
+    keep = ["example_id", "evasion_pred", "clarity_pred",
+            "dominant_relation", "speech_act", "qud_overlap"]
+    merged[[c for c in keep if c in merged.columns]].to_json(
+        pred_path, orient="records", lines=True
+    )
+    _evaluate_file(cfg, pred_path, df)
+
+
+def _evaluate_file(cfg: dict, pred_path: Path, df: pd.DataFrame) -> None:
+    from .eval.hard_cases import boundary_report, overlap_vs_error
+    from .eval.metrics import evaluate_clarity, evaluate_evasion, save_metrics
+
+    preds = pd.read_json(pred_path, lines=True)
+    merged = df.merge(preds, on="example_id", validate="1:1")
+    merged = merged.rename(columns={
+        "clarity_label": "clarity_true", "evasion_label": "evasion_true",
+    })
+
+    metrics = {
+        "clarity": evaluate_clarity(merged["clarity_true"], merged["clarity_pred"]),
+        "evasion": evaluate_evasion(merged["evasion_true"], merged["evasion_pred"]),
+        "hard_cases": boundary_report(merged),
+    }
+    if "qud_overlap" in merged.columns and merged["qud_overlap"].notna().any():
+        metrics["overlap_vs_error"] = overlap_vs_error(merged).to_dict(orient="records")
+
+    out = pred_path.with_name(pred_path.stem.replace("_predictions", "_metrics") + ".json")
+    save_metrics(metrics, out)
+    logger.info("Clarity Macro-F1: %.4f | Evasion Macro-F1: %.4f  ->  %s",
+                metrics["clarity"]["macro_f1"], metrics["evasion"]["macro_f1"], out)
+
+
+def cmd_evaluate(cfg: dict, args) -> None:
+    df = _load_split(cfg, args.split)
+    _evaluate_file(cfg, Path(args.pred), df)
+
+
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="qud_evasion")
+    parser.add_argument("command", choices=[
+        "prepare-data", "train-encoder", "llm-baseline", "qud-pipeline", "evaluate",
+    ])
+    parser.add_argument("--config", default="configs/base.yaml")
+    parser.add_argument("--split", default="dev",
+                        choices=["train", "dev", "official_test"])
+    parser.add_argument("--pred", help="Predictions JSONL (evaluate command)")
+    args = parser.parse_args()
+
+    setup_logging()
+    cfg = load_config(args.config)
+    seed_everything(cfg.get("seed", 13))
+    logger.info("Config: %s", json.dumps(cfg, indent=2, default=str))
+
+    {
+        "prepare-data": cmd_prepare_data,
+        "train-encoder": cmd_train_encoder,
+        "llm-baseline": cmd_llm_baseline,
+        "qud-pipeline": cmd_qud_pipeline,
+        "evaluate": cmd_evaluate,
+    }[args.command](cfg, args)
+
+
+if __name__ == "__main__":
+    main()

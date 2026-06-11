@@ -1,0 +1,18 @@
+# Shared defaults. Pipeline-specific configs inherit these by copy.
+model_name: microsoft/deberta-v3-base
+max_len: 384
+dev_size: 0.15
+drop_inaudible: false
+use_class_weights: true
+
+epochs: 6
+lr: 2.0e-5
+batch_size: 16
+grad_accum: 1
+weight_decay: 0.01
+warmup_ratio: 0.1
+early_stopping_patience: 2
+fp16: true
+
+seed: 42
+logging_steps: 25

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clarity-evasion"
+version = "0.1.0"
+description = "Political clarity & evasion detection (SemEval-2026 Task 6 / QEvasion)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "torch>=2.1", "transformers>=4.44", "datasets>=2.20",
+  "scikit-learn>=1.3", "pandas>=2.0", "numpy>=1.24",
+  "sentencepiece>=0.1.99", "accelerate>=0.30", "matplotlib>=3.7", "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+clarity-train = "clarity_evasion.cli.train:main"
+clarity-eval = "clarity_evasion.cli.evaluate:main"
+clarity-eda = "clarity_evasion.cli.eda:main"
+
+[tool.setuptools.packages.find]
+include = ["clarity_evasion*"]

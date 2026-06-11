@@ -1,0 +1,12 @@
+# Bonus Subtask 2: joint multitask (evasion + clarity auxiliary head).
+pipeline: evasion
+evasion_mode: joint
+aux_weight: 0.5
+model_name: microsoft/deberta-v3-base
+max_len: 384
+epochs: 6
+lr: 2.0e-5
+batch_size: 16
+fp16: true
+seed: 42
+output_dir: runs/evasion-joint
