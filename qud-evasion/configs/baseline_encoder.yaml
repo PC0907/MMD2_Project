@@ -4,6 +4,6 @@ encoder_model: microsoft/deberta-v3-large
 targets: [evasion, clarity]
 max_length: 512
 lr: 1.0e-5
-epochs: 5
+epochs: 10
 batch_size: 8
 grad_accum: 4

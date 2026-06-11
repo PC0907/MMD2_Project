@@ -79,11 +79,18 @@ def train_encoder(
         id2label={v: k for k, v in label2id.items()}, label2id=label2id,
     )
 
-    weights = torch.tensor(
-        compute_class_weight("balanced", classes=np.arange(len(labels)),
-                             y=train_df[col].map(label2id).to_numpy()),
-        dtype=torch.float,
+    raw_weights = compute_class_weight(
+        "balanced", classes=np.arange(len(labels)),
+        y=train_df[col].map(label2id).to_numpy(),
     )
+    # Soften (sqrt) and clip: full inverse-frequency weighting destabilizes
+    # DeBERTa fine-tuning when rare classes (e.g. Partial, 8 examples) get
+    # enormous weights, collapsing the model to majority-class prediction.
+    raw_weights = np.sqrt(raw_weights)
+    raw_weights = np.clip(raw_weights, a_min=None, a_max=5.0)
+    weights = torch.tensor(raw_weights, dtype=torch.float)
+    logger.info("Class weights (%s): %s", target,
+                {labels[i]: round(float(w), 2) for i, w in enumerate(weights)})
 
     train_ds = _encode(train_df, tokenizer, label2id, max_length, col)
     dev_ds = _encode(dev_df, tokenizer, label2id, max_length, col)
