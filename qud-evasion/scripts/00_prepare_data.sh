@@ -6,7 +6,9 @@
 # train/dev split, and (2) pre-fetches all model weights into HF_HOME
 # so that compute-node jobs can run with HF_HUB_OFFLINE=1.
 set -euo pipefail
-HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 source "$(dirname "$0")/_env.sh"
+export HF_HUB_OFFLINE=0
+export TRANSFORMERS_OFFLINE=0
+source "$(dirname "$0")/_env.sh"
 
 python -m qud_evasion.cli prepare-data --config configs/base.yaml
 

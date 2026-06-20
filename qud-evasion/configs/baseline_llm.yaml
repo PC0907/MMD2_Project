@@ -1,6 +1,6 @@
 inherit: base.yaml
 output_dir: outputs/llm_baseline
-llm_model: Qwen/Qwen3.5-4B   # swap for your local model
+llm_model: Qwen/Qwen3-4B-Instruct-2507
 llm_cache: outputs/llm_cache.sqlite
 tensor_parallel: 4          # match your GPU count
 max_model_len: 8192

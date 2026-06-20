@@ -2,7 +2,7 @@
 # Shared environment setup, sourced by every job script.
 # Bender cluster: no SLURM account needed (unlike Marvin/Bonna).
 
-# --- CONFIGURE ME (1/2): modules --------------------------------------
+# --- modules ----------------------------------------------------------
 # Module names verified on Bender (module avail Python / module avail CUDA).
 # Python must match the interpreter used to build ~/qud-env (3.12.3).
 # CUDA 12.1.1 matches the installed torch build (2.5.1+cu121).
@@ -10,7 +10,7 @@ module purge
 module load Python/3.12.3-GCCcore-13.3.0
 module load CUDA/12.1.1
 
-# --- CONFIGURE ME (2/2): storage ---------------------------------------
+# --- storage ----------------------------------------------------------
 export PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 export HF_HOME="${HF_HOME:-$PROJECT_DIR/.hf_cache}"
 

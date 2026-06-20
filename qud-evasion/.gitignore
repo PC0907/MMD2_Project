@@ -9,3 +9,5 @@ outputs/*
 .ipynb_checkpoints/
 wandb/
 logs/
+.hf_cache/
+outputs/
