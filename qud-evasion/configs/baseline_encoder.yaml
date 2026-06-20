@@ -1,9 +1,16 @@
 inherit: base.yaml
-output_dir: outputs/encoder
-encoder_model: microsoft/deberta-v3-base
-targets: [evasion, clarity]
-max_length: 512
-lr: 1.0e-5
-epochs: 10
-batch_size: 8
-grad_accum: 4
+output_dir: outputs/llm_baseline
+
+# Pure causal LM, non-thinking, instruction-tuned — matches the QUD pipeline
+# backbone. (Not Qwen3.5-4B: that is a multimodal VLM in thinking mode.)
+llm_model: Qwen/Qwen3-4B-Instruct-2507
+llm_cache: outputs/llm_cache.sqlite
+
+# tensor_parallel is inert under the transformers backend (device_map="auto"
+# handles GPU placement); kept for config compatibility.
+tensor_parallel: 4
+max_model_len: 8192
+temperature: 0.0
+max_tokens: 512
+few_shot: true
+k_per_class: 1
