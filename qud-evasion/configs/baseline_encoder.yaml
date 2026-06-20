@@ -1,6 +1,6 @@
 inherit: base.yaml
 output_dir: outputs/encoder
-encoder_model: microsoft/deberta-v3-large
+encoder_model: microsoft/deberta-v3-base
 targets: [evasion, clarity]
 max_length: 512
 lr: 1.0e-5
