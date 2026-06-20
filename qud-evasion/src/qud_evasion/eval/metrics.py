@@ -64,7 +64,7 @@ def any_annotator_macro_f1(
 def save_metrics(metrics: dict, path: str | Path) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(metrics, indent=2))
+    path.write_text(json.dumps(metrics, indent=2, default=str))
 
 
 def confusion_df(metrics: dict) -> pd.DataFrame:
