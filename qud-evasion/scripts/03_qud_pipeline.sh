@@ -30,7 +30,7 @@ SPLIT=${1:-dev}
 HEAD=${2:-rule}
 CONFIG=configs/qud_pipeline.yaml
 if [[ "$HEAD" == "learned" ]]; then
-  TMP=$(mktemp --suffix=.yaml)
+  TMP="configs/.qud_pipeline_learned.yaml"
   sed 's/^head: rule/head: learned/' "$CONFIG" > "$TMP"
   CONFIG="$TMP"
 fi
