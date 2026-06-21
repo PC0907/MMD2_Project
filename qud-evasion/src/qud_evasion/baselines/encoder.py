@@ -77,7 +77,6 @@ def train_encoder(
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name, num_labels=len(labels),
         id2label={v: k for k, v in label2id.items()}, label2id=label2id,
-        use_safetensors=True,
     )
 
     raw_weights = compute_class_weight(

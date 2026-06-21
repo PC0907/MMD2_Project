@@ -17,3 +17,4 @@ ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 source "$ROOT/scripts/_env.sh"
 nvidia-smi
 python -m qud_evasion.cli train-encoder --config configs/baseline_encoder.yaml
+
