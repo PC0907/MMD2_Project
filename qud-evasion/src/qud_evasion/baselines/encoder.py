@@ -73,7 +73,7 @@ def train_encoder(
     else:
         labels, label2id, id2label, col = CLARITY_LABELS, CLARITY2ID, ID2CLARITY, "clarity_label"
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, fix_mistral_regex=True)
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name, num_labels=len(labels),
         id2label={v: k for k, v in label2id.items()}, label2id=label2id,
