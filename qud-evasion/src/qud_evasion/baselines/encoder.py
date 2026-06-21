@@ -1,6 +1,6 @@
 """Baseline (b): fine-tuned encoder classifier.
 
-DeBERTa-v3-large over "question [SEP] answer" with class-weighted
+DeBERTa-v3 over "question [SEP] answer" with class-weighted
 cross-entropy. This reproduces the encoder paradigm that saturated at
 ~0.81 (clarity) / ~0.50 (evasion) in SemEval-2026 Task 6; it is a
 comparison system, not a contribution.
@@ -58,7 +58,7 @@ def train_encoder(
     train_df: pd.DataFrame,
     dev_df: pd.DataFrame,
     target: str = "evasion",                     # "evasion" | "clarity"
-    model_name: str = "microsoft/deberta-v3-large",
+    model_name: str = "microsoft/deberta-v3-base",
     output_dir: str | Path = "outputs/encoder",
     max_length: int = 512,
     lr: float = 1e-5,
@@ -77,6 +77,7 @@ def train_encoder(
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name, num_labels=len(labels),
         id2label={v: k for k, v in label2id.items()}, label2id=label2id,
+        use_safetensors=True,
     )
 
     raw_weights = compute_class_weight(
@@ -145,12 +146,16 @@ def predict_encoder(
     device: str = "cuda",
 ) -> list[str]:
     if target == "evasion":
-        label2id, id2label, col = EVASION2ID, ID2EVASION, "evasion_label"
+        labels, label2id, id2label, col = EVASION_LABELS, EVASION2ID, ID2EVASION, "evasion_label"
     else:
-        label2id, id2label, col = CLARITY2ID, ID2CLARITY, "clarity_label"
+        labels, label2id, id2label, col = CLARITY_LABELS, CLARITY2ID, ID2CLARITY, "clarity_label"
 
+    # Load the fine-tuned model from its saved directory. num_labels/id2label
+    # are already baked into the saved config, so they need not be re-passed.
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    model = AutoModelForSequenceClassification.from_pretrained(model_dir).to(device).eval()
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_dir, use_safetensors=True,
+    ).to(device).eval()
 
     preds = []
     for s in range(0, len(df), batch_size):
