@@ -22,6 +22,12 @@ from .utils import load_config, seed_everything, setup_logging
 
 logger = logging.getLogger("qud_evasion.cli")
 
+# Default model names used when a config key is absent. These must match
+# models that are actually pre-fetched by 00_prepare_data.sh, otherwise an
+# offline compute-node run will fail with LocalEntryNotFoundError.
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+DEFAULT_NLI_MODEL = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -89,7 +95,7 @@ def cmd_train_encoder(cfg: dict, args) -> None:
         result = train_encoder(
             train, dev,
             target=target,
-            model_name=cfg.get("encoder_model", "microsoft/deberta-v3-large"),
+            model_name=cfg.get("encoder_model", "microsoft/deberta-v3-base"),
             output_dir=out_dir,
             max_length=cfg.get("max_length", 512),
             lr=cfg.get("lr", 1e-5),
@@ -133,11 +139,13 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
     )
     pairs = llm_relations(df, recon, client, out_dir / f"{args.split}_stage2_pairs.jsonl")
     if cfg.get("use_embedding_features", True) and len(pairs):
-        pairs = embedding_features(pairs, cfg.get("embedding_model",
-                                   "sentence-transformers/all-mpnet-base-v2"))
+        pairs = embedding_features(
+            pairs, cfg.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
+        )
     if cfg.get("use_nli_features", True) and len(pairs):
-        pairs = nli_features(pairs, cfg.get("nli_model",
-                             "microsoft/deberta-v3-large-mnli"))
+        pairs = nli_features(
+            pairs, cfg.get("nli_model", DEFAULT_NLI_MODEL)
+        )
     agg = aggregate_per_example(pairs, recon)
     agg.to_json(out_dir / f"{args.split}_stage2_agg.jsonl", orient="records", lines=True)
 
@@ -158,9 +166,15 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
             train_pairs = llm_relations(train_df, train_recon, client,
                                         out_dir / "train_stage2_pairs.jsonl")
             if cfg.get("use_embedding_features", True):
-                train_pairs = embedding_features(train_pairs)
+                train_pairs = embedding_features(
+                    train_pairs,
+                    cfg.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
+                )
             if cfg.get("use_nli_features", True):
-                train_pairs = nli_features(train_pairs)
+                train_pairs = nli_features(
+                    train_pairs,
+                    cfg.get("nli_model", DEFAULT_NLI_MODEL),
+                )
             train_agg = aggregate_per_example(train_pairs, train_recon)
             clf = LearnedClassifier().fit(
                 train_df.merge(train_agg, on="example_id")[train_agg.columns],

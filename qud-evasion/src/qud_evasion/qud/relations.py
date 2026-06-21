@@ -111,7 +111,7 @@ def embedding_features(
 
 def nli_features(
     pair_df: pd.DataFrame,
-    model_name: str = "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli",
+    model_name: str = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
     device: str = "cuda",
     batch_size: int = 64,
 ) -> pd.DataFrame:
