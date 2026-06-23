@@ -147,6 +147,8 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
             pairs, cfg.get("nli_model", DEFAULT_NLI_MODEL)
         )
     agg = aggregate_per_example(pairs, recon, df)
+    from .qud.allocation import allocate_turns
+    agg = allocate_turns(agg)
     agg.to_json(out_dir / f"{args.split}_stage2_agg.jsonl", orient="records", lines=True)
 
     head = cfg.get("head", "rule")
@@ -176,6 +178,7 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
                     cfg.get("nli_model", DEFAULT_NLI_MODEL),
                 )
             train_agg = aggregate_per_example(train_pairs, train_recon, train_df)
+            train_agg = allocate_turns(train_agg)
             # train_agg already has one row per example_id with all features;
             # align labels to it by example_id rather than re-merging (which
             # would collide on turn_id/question_order now present in both).

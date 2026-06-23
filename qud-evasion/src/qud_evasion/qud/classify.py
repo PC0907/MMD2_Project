@@ -101,7 +101,10 @@ class RuleClassifier:
 FEATURE_COLUMNS = [
     "qud_overlap", "mean_overlap", "n_addressed",
     "emb_cosine_max", "nli_asym_best",
-    "rank_in_turn", "turn_size", "is_multi_question",   # turn-structural
+    "rank_in_turn", "turn_size", "is_multi_question",
+    # turn-level allocation (sibling competition)
+    "alloc_share", "overlap_rank_in_turn", "is_best_in_turn",
+    "sibling_max_overlap", "self_minus_sibling", "won_allocation",
 ]
 
 
