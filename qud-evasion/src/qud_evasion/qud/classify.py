@@ -198,3 +198,5 @@ class LearnedClassifier:
         blob = joblib.load(path)
         obj.model, obj.feature_names = blob["model"], blob["features"]
         return obj
+    
+    

@@ -16,25 +16,55 @@ All templates ask for JSON only. Parsing utilities live in
 qud/reconstruct.py and qud/relations.py.
 """
 
+# Replace RECONSTRUCT_SYSTEM in prompts.py with this version.
+# Key change: a much stricter standard for what counts as an "addressed
+# question", explicit speech-act handling for refusals / ignorance / vagueness,
+# and an instruction to PREFER an empty list over speculative reconstruction.
+# This targets the diagnosed failure where non-replies (refusals, claims of
+# ignorance, topic-rambling) were reconstructed into confident QUDs, inflating
+# overlap and causing Clear Non-Reply -> Ambivalent errors.
+
 RECONSTRUCT_SYSTEM = """\
 You analyze transcripts of political interviews. You will see ONLY the \
 respondent's answer, not the interviewer's question. Your job is to infer \
-which question or questions this answer would be a DIRECT answer to, based \
-solely on the information the answer actually provides.
+which question or questions this answer DIRECTLY AND SUBSTANTIVELY answers.
+
+A question counts as "addressed" ONLY IF the answer actually supplies the \
+information or commitment that question asks for. Apply this strict test:
+- Could a reader, from this answer alone, state a concrete answer to the \
+reconstructed question? If not, do NOT include it.
+- Merely mentioning, gesturing at, or being on the topic of something is NOT \
+enough. Vague, hedged, non-committal, or topic-shifting statements address \
+NOTHING and must yield an empty list.
+
+Critically, recognize NON-ANSWERS and return an EMPTY question list for them:
+- The respondent refuses, deflects the question back, or says it is not their \
+place / not their job to answer  -> speech_act = "decline".
+- The respondent says they do not know, have no information, "we'll see", \
+"I don't read anything into it", or otherwise claims ignorance / withholds \
+judgment  -> speech_act = "ignorance".
+- The respondent asks the interviewer to repeat or clarify, or only partially \
+restates the question  -> speech_act = "clarify".
+- The respondent talks at length but commits to nothing specific and resolves \
+no concrete question (rambling, platitudes, changing subject) -> return an \
+EMPTY list with speech_act = "answer" (a content-free answer attempt).
+
+When the answer DOES substantively resolve something, set speech_act = "answer" \
+and list the question(s) it resolves.
 
 Rules:
 - Write each addressed question as a single, specific interrogative sentence.
-- Only include questions the answer genuinely resolves or substantively \
-addresses. Do not guess what the interviewer might have asked.
-- If the answer provides no information and instead refuses, claims not to \
-know, or asks for clarification, return an empty question list and set \
-"speech_act" accordingly.
+- Do NOT invent questions from isolated topical words; only include a question \
+if the answer genuinely resolves it.
+- Prefer an EMPTY list over a speculative one. It is better to return no \
+questions than to manufacture a question the answer does not truly answer.
 - Return at most {max_quds} questions, most central first.
 
 Respond with JSON only, in this schema:
 {{"addressed_questions": ["...", "..."],
   "speech_act": "answer" | "decline" | "ignorance" | "clarify",
-  "evidence": "short quote or paraphrase of the answer span supporting q1"}}"""
+  "evidence": "short quote or paraphrase of the answer span supporting q1, or \
+empty string if no question is addressed"}}"""
 
 RECONSTRUCT_USER = """\
 Answer given by the respondent:
