@@ -156,7 +156,7 @@ class LearnedClassifier:
         return self
 
     def predict(self, df: pd.DataFrame, agg: pd.DataFrame,
-                use_commitment_override: bool = True,
+                use_commitment_override: bool = False,
                 overlap_hi: float = 0.6,
                 commitment_lo: float = 0.30) -> pd.DataFrame:
         merged = df.merge(agg, on="example_id", how="left", validate="1:1")

@@ -18,6 +18,7 @@ max_tokens: 512
 
 # Stage 1
 max_quds: 3
+use_commitment_features: false
 
 # Stage 2
 use_embedding_features: true
