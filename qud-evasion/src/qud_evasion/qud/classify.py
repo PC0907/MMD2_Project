@@ -155,14 +155,37 @@ class LearnedClassifier:
         self.model.fit(X, y_evasion.map(EVASION2ID))
         return self
 
-    def predict(self, df: pd.DataFrame, agg: pd.DataFrame) -> pd.DataFrame:
+    def predict(self, df: pd.DataFrame, agg: pd.DataFrame,
+                use_commitment_override: bool = True,
+                overlap_hi: float = 0.6,
+                commitment_lo: float = 0.30) -> pd.DataFrame:
         merged = df.merge(agg, on="example_id", how="left", validate="1:1")
         X, _ = _featurize(merged)
         merged["evasion_pred"] = [ID2EVASION[i] for i in self.model.predict(X)]
-        merged["clarity_pred"] = merged["evasion_pred"].map(clarity_from_evasion)
         proba = self.model.predict_proba(X)
         for j, cls in enumerate(self.model.classes_):
             merged[f"p_{ID2EVASION[int(cls)]}"] = proba[:, j]
+
+        # --- Confidence-conditional commitment override ---------------------
+        # Surgical correction for the diagnosed high-overlap failure mode: when
+        # an answer is highly on-topic (qud_overlap high) but commits to little
+        # (commitment low) yet was predicted as a genuine reply, it is the
+        # signature of vague evasion -> relabel toward General. This applies the
+        # signal ONLY where it is diagnostic (high-overlap region), rather than
+        # as a flat feature, mirroring the confidence-conditional routing that
+        # was the strongest strategy in the shared task.
+        if use_commitment_override and {"qud_overlap", "commitment"}.issubset(merged.columns):
+            ov = pd.to_numeric(merged["qud_overlap"], errors="coerce").fillna(0.0)
+            cm = pd.to_numeric(merged["commitment"], errors="coerce").fillna(0.25)
+            mask = (
+                (ov >= overlap_hi)
+                & (cm <= commitment_lo)
+                & (merged["evasion_pred"].isin(["Explicit", "Implicit"]))
+            )
+            merged.loc[mask, "evasion_pred"] = "General"
+            merged["commitment_override"] = mask.astype(int)
+
+        merged["clarity_pred"] = merged["evasion_pred"].map(clarity_from_evasion)
         return merged
 
     def save(self, path: str | Path) -> None:
