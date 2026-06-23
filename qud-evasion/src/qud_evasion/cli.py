@@ -146,7 +146,7 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
         pairs = nli_features(
             pairs, cfg.get("nli_model", DEFAULT_NLI_MODEL)
         )
-    agg = aggregate_per_example(pairs, recon)
+    agg = aggregate_per_example(pairs, recon, df)
     agg.to_json(out_dir / f"{args.split}_stage2_agg.jsonl", orient="records", lines=True)
 
     head = cfg.get("head", "rule")
@@ -175,7 +175,7 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
                     train_pairs,
                     cfg.get("nli_model", DEFAULT_NLI_MODEL),
                 )
-            train_agg = aggregate_per_example(train_pairs, train_recon)
+            train_agg = aggregate_per_example(train_pairs, train_recon, train_df)
             clf = LearnedClassifier().fit(
                 train_df.merge(train_agg, on="example_id")[train_agg.columns],
                 train_df["evasion_label"],

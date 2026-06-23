@@ -101,6 +101,7 @@ class RuleClassifier:
 FEATURE_COLUMNS = [
     "qud_overlap", "mean_overlap", "n_addressed",
     "emb_cosine_max", "nli_asym_best",
+    "rank_in_turn", "turn_size", "is_multi_question",   # turn-structural
 ]
 
 

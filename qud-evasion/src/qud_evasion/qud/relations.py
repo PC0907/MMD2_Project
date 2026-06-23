@@ -153,10 +153,13 @@ def _entailment_index(model) -> int:
     return 0
 
 
-def aggregate_per_example(pair_df: pd.DataFrame, recon: pd.DataFrame) -> pd.DataFrame:
+def aggregate_per_example(pair_df: pd.DataFrame, recon: pd.DataFrame,
+                          df: pd.DataFrame | None = None) -> pd.DataFrame:
     """Collapse pairwise relations to one record per example:
     dominant relation, best overlap, mean/max similarity features, plus
-    the Stage-1 speech act."""
+    the Stage-1 speech act. If `df` (with turn_id/question_order) is passed,
+    also attaches turn-structural features (rank_in_turn, turn_size,
+    is_multi_question) that exploit sibling sub-question structure."""
     prio = {r.value: i for i, r in enumerate(RELATION_PRIORITY)}
 
     rows = []
@@ -180,4 +183,26 @@ def aggregate_per_example(pair_df: pd.DataFrame, recon: pd.DataFrame) -> pd.Data
     agg["dominant_relation"] = agg["dominant_relation"].fillna(QUDRelation.NONE.value)
     agg["qud_overlap"] = agg["qud_overlap"].fillna(0.0)
     agg["n_addressed"] = agg["n_addressed"].fillna(0).astype(int)
+
+    # --- Turn-structural features (sibling sub-question modeling) ---
+    # The shared answer of a turn is allocated across its sibling sub-questions;
+    # later sub-questions are evaded far more often (monotonic in position).
+    if df is not None and {"turn_id", "question_order", "example_id"}.issubset(df.columns):
+        turn_cols = df[["example_id", "turn_id", "question_order"]].copy()
+        agg = agg.merge(turn_cols, on="example_id", how="left")
+        # rank within the turn by question_order (1 = first sub-question asked)
+        agg["rank_in_turn"] = (
+            agg.groupby("turn_id")["question_order"].rank(method="first")
+        )
+        size = agg.groupby("turn_id")["example_id"].transform("size")
+        agg["turn_size"] = size
+        agg["is_multi_question"] = (size > 1).astype(float)
+        # numeric fallbacks
+        agg["rank_in_turn"] = agg["rank_in_turn"].fillna(1.0)
+        agg["turn_size"] = agg["turn_size"].fillna(1).astype(float)
+    else:
+        agg["rank_in_turn"] = 1.0
+        agg["turn_size"] = 1.0
+        agg["is_multi_question"] = 0.0
+
     return agg
