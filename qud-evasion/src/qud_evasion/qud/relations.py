@@ -29,7 +29,7 @@ except ImportError:  # headless fallback
 
 from ..data.taxonomy import QUDRelation
 from .llm_client import LLMClient, parse_json
-from .prompts import RELATE_SYSTEM, RELATE_USER
+from .prompts import RELATE_SYSTEM, RELATE_USER, COMMITMENT_SYSTEM, COMMITMENT_USER
 
 logger = logging.getLogger(__name__)
 
@@ -206,3 +206,65 @@ def aggregate_per_example(pair_df: pd.DataFrame, recon: pd.DataFrame,
         agg["is_multi_question"] = 0.0
 
     return agg
+
+# Add this function to src/qud_evasion/qud/relations.py
+# (and add to the imports at the top of relations.py:
+#     from .prompts import COMMITMENT_SYSTEM, COMMITMENT_USER
+#  alongside the existing RELATE_SYSTEM, RELATE_USER import.)
+
+_COMMITMENT_SCORE = {"full": 1.0, "partial": 0.6, "evasive": 0.25, "none": 0.0}
+
+
+def commitment_features(
+    df: pd.DataFrame,
+    client: "LLMClient",
+    out_path: str | Path,
+    question_col: str = "question",
+    answer_col: str = "interview_answer",
+    batch_size: int = 256,
+) -> pd.DataFrame:
+    """Stage 2b: judge answer-commitment per (asked question, answer) pair.
+
+    Orthogonal to the RELATE overlap (which measures topical relevance):
+    a General/vague evasion is on-topic yet commits to nothing, so high
+    overlap with low commitment is the structural signature of vague evasion.
+    Operates on the ORIGINAL asked question + answer (not the reconstructed
+    QUD), so it is robust to Stage-1 reconstruction drift.
+
+    Returns one row per example_id with:
+      commitment        : float in [0,1]
+      commitment_label  : full | partial | evasive | none
+    """
+    users = [
+        COMMITMENT_USER.format(question=q, answer=a)
+        for q, a in zip(df[question_col], df[answer_col])
+    ]
+    raw = []
+    for s in range(0, len(users), batch_size):
+        raw.extend(client.chat_batch(COMMITMENT_SYSTEM, users[s:s + batch_size]))
+
+    rows = []
+    for ex_id, text in zip(df["example_id"], raw):
+        rec = parse_json(text, default={})
+        label = str(rec.get("commitment_label", "evasive")).lower()
+        if label not in _COMMITMENT_SCORE:
+            label = "evasive"
+        # prefer the explicit numeric if present and sane, else map from label
+        try:
+            score = float(rec.get("commitment", _COMMITMENT_SCORE[label]))
+            if not (0.0 <= score <= 1.0):
+                score = _COMMITMENT_SCORE[label]
+        except (TypeError, ValueError):
+            score = _COMMITMENT_SCORE[label]
+        rows.append({
+            "example_id": ex_id,
+            "commitment": score,
+            "commitment_label": label,
+        })
+
+    res = pd.DataFrame(rows)
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    res.to_json(out_path, orient="records", lines=True)
+    logger.info("Stage 2b wrote %d commitment judgments to %s", len(res), out_path)
+    return res

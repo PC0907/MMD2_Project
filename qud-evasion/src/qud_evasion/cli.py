@@ -126,29 +126,49 @@ def cmd_llm_baseline(cfg: dict, args) -> None:
 def cmd_qud_pipeline(cfg: dict, args) -> None:
     from .qud.classify import LearnedClassifier, RuleClassifier
     from .qud.reconstruct import reconstruct_quds
-    from .qud.relations import (aggregate_per_example, embedding_features,
-                                llm_relations, nli_features)
+    from .qud.allocation import allocate_turns
+    from .qud.relations import (aggregate_per_example, commitment_features,
+                                embedding_features, llm_relations, nli_features)
 
     df = _load_split(cfg, args.split)
     client = _make_client(cfg)
     out_dir = Path(cfg["output_dir"])
 
-    recon = reconstruct_quds(
-        df, client, out_dir / f"{args.split}_stage1_quds.jsonl",
-        max_quds=cfg.get("max_quds", 3),
-    )
-    pairs = llm_relations(df, recon, client, out_dir / f"{args.split}_stage2_pairs.jsonl")
-    if cfg.get("use_embedding_features", True) and len(pairs):
-        pairs = embedding_features(
-            pairs, cfg.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
+    def build_agg(d, split_tag):
+        """Run the full feature pipeline for one split and return the
+        aggregated per-example frame with all features attached."""
+        recon = reconstruct_quds(
+            d, client, out_dir / f"{split_tag}_stage1_quds.jsonl",
+            max_quds=cfg.get("max_quds", 3),
         )
-    if cfg.get("use_nli_features", True) and len(pairs):
-        pairs = nli_features(
-            pairs, cfg.get("nli_model", DEFAULT_NLI_MODEL)
+        pairs = llm_relations(
+            d, recon, client, out_dir / f"{split_tag}_stage2_pairs.jsonl"
         )
-    agg = aggregate_per_example(pairs, recon, df)
-    from .qud.allocation import allocate_turns
-    agg = allocate_turns(agg)
+        if cfg.get("use_embedding_features", True) and len(pairs):
+            pairs = embedding_features(
+                pairs, cfg.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
+            )
+        if cfg.get("use_nli_features", True) and len(pairs):
+            pairs = nli_features(
+                pairs, cfg.get("nli_model", DEFAULT_NLI_MODEL)
+            )
+        agg = aggregate_per_example(pairs, recon, d)
+        agg = allocate_turns(agg)
+
+        # Stage 2b: answer-commitment (orthogonal to topical overlap).
+        if cfg.get("use_commitment_features", True):
+            commit = commitment_features(
+                d, client, out_dir / f"{split_tag}_commitment.jsonl"
+            )
+            agg = agg.merge(commit, on="example_id", how="left")
+            agg["commitment"] = agg["commitment"].fillna(0.25)
+            agg["commitment_label"] = agg["commitment_label"].fillna("evasive")
+        else:
+            agg["commitment"] = 0.25
+            agg["commitment_label"] = "evasive"
+        return agg
+
+    agg = build_agg(df, args.split)
     agg.to_json(out_dir / f"{args.split}_stage2_agg.jsonl", orient="records", lines=True)
 
     head = cfg.get("head", "rule")
@@ -161,24 +181,7 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
         if not model_path.exists():
             logger.info("Training learned head on train split features...")
             train_df = _load_split(cfg, "train")
-            train_recon = reconstruct_quds(
-                train_df, client, out_dir / "train_stage1_quds.jsonl",
-                max_quds=cfg.get("max_quds", 3),
-            )
-            train_pairs = llm_relations(train_df, train_recon, client,
-                                        out_dir / "train_stage2_pairs.jsonl")
-            if cfg.get("use_embedding_features", True):
-                train_pairs = embedding_features(
-                    train_pairs,
-                    cfg.get("embedding_model", DEFAULT_EMBEDDING_MODEL),
-                )
-            if cfg.get("use_nli_features", True):
-                train_pairs = nli_features(
-                    train_pairs,
-                    cfg.get("nli_model", DEFAULT_NLI_MODEL),
-                )
-            train_agg = aggregate_per_example(train_pairs, train_recon, train_df)
-            train_agg = allocate_turns(train_agg)
+            train_agg = build_agg(train_df, "train")
             # train_agg already has one row per example_id with all features;
             # align labels to it by example_id rather than re-merging (which
             # would collide on turn_id/question_order now present in both).
@@ -198,7 +201,8 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
     merged = clf.predict(df, agg)
     pred_path = out_dir / f"{args.split}_predictions.jsonl"
     keep = ["example_id", "evasion_pred", "clarity_pred",
-            "dominant_relation", "speech_act", "qud_overlap"]
+            "dominant_relation", "speech_act", "qud_overlap",
+            "commitment", "commitment_label"]
     merged[[c for c in keep if c in merged.columns]].to_json(
         pred_path, orient="records", lines=True
     )

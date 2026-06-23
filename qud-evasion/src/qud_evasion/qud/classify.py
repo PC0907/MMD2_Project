@@ -7,8 +7,9 @@ Two interchangeable heads:
                       test of the QUD hypothesis).
   LearnedClassifier : gradient-boosted trees over the relation features
                       (dominant relation one-hot, overlap stats, speech
-                      act, NLI asymmetry, embedding similarity). Trained
-                      on the internal train split only.
+                      act, NLI asymmetry, embedding similarity, turn-level
+                      allocation, and answer-commitment). Trained on the
+                      internal train split only.
 
 Both predict the 9-way evasion label; clarity is derived through the
 taxonomy hierarchy (joint learning for free).
@@ -31,6 +32,9 @@ from .llm_client import LLMClient, parse_json
 from .prompts import DIRECTNESS_SYSTEM, DIRECTNESS_USER
 
 logger = logging.getLogger(__name__)
+
+# Allowed commitment labels (must match relations.commitment_features output).
+COMMITMENT_LABELS = ["full", "partial", "evasive", "none"]
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +109,8 @@ FEATURE_COLUMNS = [
     # turn-level allocation (sibling competition)
     "alloc_share", "overlap_rank_in_turn", "is_best_in_turn",
     "sibling_max_overlap", "self_minus_sibling", "won_allocation",
+    # answer-commitment (orthogonal to topical overlap)
+    "commitment",
 ]
 
 
@@ -119,8 +125,17 @@ def _featurize(agg: pd.DataFrame) -> tuple[np.ndarray, list[str]]:
             pd.CategoricalDtype([s.value for s in SpeechAct])
         ), prefix="sa",
     )
+    # commitment label one-hot (full / partial / evasive / none)
+    commit_series = (
+        agg["commitment_label"] if "commitment_label" in agg.columns
+        else pd.Series(["evasive"] * len(agg), index=agg.index)
+    )
+    commit_dummies = pd.get_dummies(
+        commit_series.astype(pd.CategoricalDtype(COMMITMENT_LABELS)),
+        prefix="commit",
+    )
     num = agg[FEATURE_COLUMNS].fillna(0.0)
-    X = pd.concat([num, rel_dummies, sa_dummies], axis=1)
+    X = pd.concat([num, rel_dummies, sa_dummies, commit_dummies], axis=1)
     return X.to_numpy(dtype=float), list(X.columns)
 
 
