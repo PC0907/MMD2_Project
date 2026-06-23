@@ -176,9 +176,15 @@ def cmd_qud_pipeline(cfg: dict, args) -> None:
                     cfg.get("nli_model", DEFAULT_NLI_MODEL),
                 )
             train_agg = aggregate_per_example(train_pairs, train_recon, train_df)
+            # train_agg already has one row per example_id with all features;
+            # align labels to it by example_id rather than re-merging (which
+            # would collide on turn_id/question_order now present in both).
+            train_labeled = train_agg.merge(
+                train_df[["example_id", "evasion_label"]], on="example_id"
+            )
             clf = LearnedClassifier().fit(
-                train_df.merge(train_agg, on="example_id")[train_agg.columns],
-                train_df["evasion_label"],
+                train_labeled,
+                train_labeled["evasion_label"],
             )
             clf.save(model_path)
         else:
