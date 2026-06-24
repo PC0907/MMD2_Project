@@ -24,47 +24,60 @@ qud/reconstruct.py and qud/relations.py.
 # ignorance, topic-rambling) were reconstructed into confident QUDs, inflating
 # overlap and causing Clear Non-Reply -> Ambivalent errors.
 
+# Replace RECONSTRUCT_SYSTEM in prompts.py with this version.
+#
+# Calibration history:
+#   v1 (original): too lenient -> non-replies reconstructed as addressed,
+#                  Clear Non-Reply recall ~0.28 (missed them).
+#   v2 (strict):   too aggressive -> over-fired ignorance/decline/clarify on
+#                  vague-but-engaging answers; 92% of Ambivalent->Non-Reply
+#                  overshoot cases were mislabeled as a non-answer speech act.
+#   v3 (this):     HIGH bar for the non-answer speech acts. A hedged or vague
+#                  response that still engages the topic is an "answer" with a
+#                  low-confidence reconstructed question (-> Ambivalent), NOT a
+#                  refusal or ignorance claim (-> Clear Non-Reply).
+
 RECONSTRUCT_SYSTEM = """\
 You analyze transcripts of political interviews. You will see ONLY the \
 respondent's answer, not the interviewer's question. Your job is to infer \
-which question or questions this answer DIRECTLY AND SUBSTANTIVELY answers.
+which question(s) this answer addresses, and to classify the answer's \
+speech act.
 
-A question counts as "addressed" ONLY IF the answer actually supplies the \
-information or commitment that question asks for. Apply this strict test:
-- Could a reader, from this answer alone, state a concrete answer to the \
-reconstructed question? If not, do NOT include it.
-- Merely mentioning, gesturing at, or being on the topic of something is NOT \
-enough. Vague, hedged, non-committal, or topic-shifting statements address \
-NOTHING and must yield an empty list.
+DEFAULT to speech_act = "answer". Most responses, even vague, hedged, \
+evasive, or partial ones, ARE answer-attempts that engage the topic. Only \
+use a non-answer speech act when it UNAMBIGUOUSLY dominates the response:
 
-Critically, recognize NON-ANSWERS and return an EMPTY question list for them:
-- The respondent refuses, deflects the question back, or says it is not their \
-place / not their job to answer  -> speech_act = "decline".
-- The respondent says they do not know, have no information, "we'll see", \
-"I don't read anything into it", or otherwise claims ignorance / withholds \
-judgment  -> speech_act = "ignorance".
-- The respondent asks the interviewer to repeat or clarify, or only partially \
-restates the question  -> speech_act = "clarify".
-- The respondent talks at length but commits to nothing specific and resolves \
-no concrete question (rambling, platitudes, changing subject) -> return an \
-EMPTY list with speech_act = "answer" (a content-free answer attempt).
+- "decline": the respondent EXPLICITLY refuses to answer or says it is not \
+their place to comment, AND offers no substantive engagement \
+(e.g. "I won't get into that", "no comment", "that's not for me to say"). \
+A response that pushes back but then says something on-topic is "answer".
+- "ignorance": the respondent EXPLICITLY states they do not know or have no \
+information, as the MAIN content (e.g. "I have no idea", "I know nothing \
+about it"). Hedging about the future ("we'll see", "time will tell", "we're \
+looking at it") is NOT ignorance — it is a vague "answer".
+- "clarify": the respondent ONLY asks the interviewer to repeat or clarify and \
+provides nothing else (e.g. "Say that again?", "What do you mean?").
 
-When the answer DOES substantively resolve something, set speech_act = "answer" \
-and list the question(s) it resolves.
+If in doubt between a non-answer act and a vague "answer", choose "answer".
 
-Rules:
-- Write each addressed question as a single, specific interrogative sentence.
-- Do NOT invent questions from isolated topical words; only include a question \
-if the answer genuinely resolves it.
-- Prefer an EMPTY list over a speculative one. It is better to return no \
-questions than to manufacture a question the answer does not truly answer.
-- Return at most {max_quds} questions, most central first.
+For addressed_questions:
+- If speech_act is "answer": list the question(s) the response engages, even \
+if it answers them only vaguely or partially. For a vague/hedged answer, \
+still give the question it gestures at (a later relation/overlap step will \
+score how well it is actually resolved). Return at most {max_quds}, most \
+central first.
+- If speech_act is "decline", "ignorance", or "clarify": return an EMPTY list \
+(these genuinely address no question).
+
+Write each addressed question as a single, specific interrogative sentence. \
+Do not invent questions from isolated topical words, but DO include a question \
+when the answer clearly engages a topic even without resolving it.
 
 Respond with JSON only, in this schema:
 {{"addressed_questions": ["...", "..."],
   "speech_act": "answer" | "decline" | "ignorance" | "clarify",
-  "evidence": "short quote or paraphrase of the answer span supporting q1, or \
-empty string if no question is addressed"}}"""
+  "evidence": "short quote or paraphrase supporting q1, or empty string if no \
+question is addressed"}}"""
 
 RECONSTRUCT_USER = """\
 Answer given by the respondent:
