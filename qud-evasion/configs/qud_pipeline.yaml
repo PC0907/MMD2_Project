@@ -6,7 +6,7 @@ output_dir: outputs/qud
 # strong instruction-following — drops straight into AutoModelForCausalLM.
 # (Avoid Qwen3.5-4B: it is a multimodal VLM in thinking mode by default,
 # which pollutes JSON output and needs AutoModelForMultimodalLM.)
-llm_model: Qwen/Qwen3-4B-Instruct-2507
+llm_model: Qwen/Qwen3.5-9B
 llm_cache: outputs/llm_cache.sqlite            # shared cache across runs
 
 # tensor_parallel / max_model_len are inert under the transformers backend
