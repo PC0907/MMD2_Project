@@ -103,7 +103,8 @@ class LLMClient:
 
         prompts = [
             self._tokenizer.apply_chat_template(
-                m, tokenize=False, add_generation_prompt=True
+                m, tokenize=False, add_generation_prompt=True,
+                enable_thinking=False,
             )
             for m in messages_batch
         ]
