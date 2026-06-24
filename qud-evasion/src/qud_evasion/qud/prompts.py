@@ -8,6 +8,8 @@ Three stages, each a separate LLM call with strict JSON output:
   Stage 2  RELATE      : asked question vs each reconstructed question ->
            structured relation (equivalent / specification /
            generalization / topic_shift / unrelated).
+  Stage 2b COMMITMENT  : does the answer commit to addressing the asked
+           question, independent of topical overlap?
   Stage 3  DIRECTNESS  : for equivalent-relation cases only, decide
            Explicit vs Implicit (is the information stated in the
            requested form?).
@@ -116,6 +118,50 @@ Think step by step, then respond with JSON only:
 {"reasoning": "...", "evasion_label": "<one of the 9 labels above>"}"""
 
 DIRECT_BASELINE_USER = """\
+Question:
+\"\"\"{question}\"\"\"
+
+Answer:
+\"\"\"{answer}\"\"\"
+
+JSON:"""
+
+
+# ===========================================================================
+# COMMITMENT (Stage 2b): does the answer COMMIT to addressing the question,
+# independent of topical overlap? Topical relevance (the RELATE overlap) and
+# answer-commitment are orthogonal: a vague/General evasion is fully on-topic
+# yet commits to nothing. This judgment is made on the ORIGINAL asked question
+# and the answer directly (not the reconstructed QUD), so it is robust to
+# reconstruction drift.
+# ===========================================================================
+
+COMMITMENT_SYSTEM = """\
+You see an interviewer's question and a respondent's answer. Judge how much \
+the answer COMMITS to actually providing what the question asks for. This is \
+NOT about topic relevance: an answer can be entirely on-topic yet commit to \
+nothing (vague, hedged, or non-specific).
+
+Use exactly one label:
+- "full": the answer provides the requested information or takes a clear, \
+specific position on what was asked.
+- "partial": the answer provides some of the requested information but hedges, \
+omits key parts, or only addresses one facet.
+- "evasive": the answer stays on the topic of the question but avoids \
+committing — it is vague, generic, deflects to a related matter, or talks \
+around the point without resolving it.
+- "none": the answer does not engage the question's content at all (refuses, \
+claims ignorance, changes subject entirely, or asks for clarification).
+
+Also output "commitment", a number from 0.0 (no commitment) to 1.0 (fully \
+committed), consistent with the label.
+
+Respond with JSON only:
+{"commitment_label": "full" | "partial" | "evasive" | "none",
+ "commitment": 0.0,
+ "rationale": "one short sentence"}"""
+
+COMMITMENT_USER = """\
 Question:
 \"\"\"{question}\"\"\"
 
