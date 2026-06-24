@@ -129,6 +129,18 @@ class LLMClient:
                 self._tokenizer.decode(completion_ids, skip_special_tokens=True)
             )
         return texts
+    
+    # def _render_chat(self, m):
+    #     try:
+    #         return self._tokenizer.apply_chat_template(
+    #             m, tokenize=False, add_generation_prompt=True,
+    #             enable_thinking=False,
+    #         )
+    #     except TypeError:
+    #         # tokenizer's template doesn't support enable_thinking; fall back
+    #         return self._tokenizer.apply_chat_template(
+    #             m, tokenize=False, add_generation_prompt=True,
+    #         )
 
     def chat_batch(self, system: str, users: list[str]) -> list[str]:
         keys = [self.cache.key(self.model_name, system, u) for u in users]
