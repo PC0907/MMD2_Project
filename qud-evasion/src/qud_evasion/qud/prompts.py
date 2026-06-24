@@ -16,68 +16,25 @@ All templates ask for JSON only. Parsing utilities live in
 qud/reconstruct.py and qud/relations.py.
 """
 
-# Replace RECONSTRUCT_SYSTEM in prompts.py with this version.
-# Key change: a much stricter standard for what counts as an "addressed
-# question", explicit speech-act handling for refusals / ignorance / vagueness,
-# and an instruction to PREFER an empty list over speculative reconstruction.
-# This targets the diagnosed failure where non-replies (refusals, claims of
-# ignorance, topic-rambling) were reconstructed into confident QUDs, inflating
-# overlap and causing Clear Non-Reply -> Ambivalent errors.
-
-# Replace RECONSTRUCT_SYSTEM in prompts.py with this version.
-#
-# Calibration history:
-#   v1 (original): too lenient -> non-replies reconstructed as addressed,
-#                  Clear Non-Reply recall ~0.28 (missed them).
-#   v2 (strict):   too aggressive -> over-fired ignorance/decline/clarify on
-#                  vague-but-engaging answers; 92% of Ambivalent->Non-Reply
-#                  overshoot cases were mislabeled as a non-answer speech act.
-#   v3 (this):     HIGH bar for the non-answer speech acts. A hedged or vague
-#                  response that still engages the topic is an "answer" with a
-#                  low-confidence reconstructed question (-> Ambivalent), NOT a
-#                  refusal or ignorance claim (-> Clear Non-Reply).
-
 RECONSTRUCT_SYSTEM = """\
 You analyze transcripts of political interviews. You will see ONLY the \
 respondent's answer, not the interviewer's question. Your job is to infer \
-which question(s) this answer addresses, and to classify the answer's \
-speech act.
+which question or questions this answer would be a DIRECT answer to, based \
+solely on the information the answer actually provides.
 
-DEFAULT to speech_act = "answer". Most responses, even vague, hedged, \
-evasive, or partial ones, ARE answer-attempts that engage the topic. Only \
-use a non-answer speech act when it UNAMBIGUOUSLY dominates the response:
-
-- "decline": the respondent EXPLICITLY refuses to answer or says it is not \
-their place to comment, AND offers no substantive engagement \
-(e.g. "I won't get into that", "no comment", "that's not for me to say"). \
-A response that pushes back but then says something on-topic is "answer".
-- "ignorance": the respondent EXPLICITLY states they do not know or have no \
-information, as the MAIN content (e.g. "I have no idea", "I know nothing \
-about it"). Hedging about the future ("we'll see", "time will tell", "we're \
-looking at it") is NOT ignorance — it is a vague "answer".
-- "clarify": the respondent ONLY asks the interviewer to repeat or clarify and \
-provides nothing else (e.g. "Say that again?", "What do you mean?").
-
-If in doubt between a non-answer act and a vague "answer", choose "answer".
-
-For addressed_questions:
-- If speech_act is "answer": list the question(s) the response engages, even \
-if it answers them only vaguely or partially. For a vague/hedged answer, \
-still give the question it gestures at (a later relation/overlap step will \
-score how well it is actually resolved). Return at most {max_quds}, most \
-central first.
-- If speech_act is "decline", "ignorance", or "clarify": return an EMPTY list \
-(these genuinely address no question).
-
-Write each addressed question as a single, specific interrogative sentence. \
-Do not invent questions from isolated topical words, but DO include a question \
-when the answer clearly engages a topic even without resolving it.
+Rules:
+- Write each addressed question as a single, specific interrogative sentence.
+- Only include questions the answer genuinely resolves or substantively \
+addresses. Do not guess what the interviewer might have asked.
+- If the answer provides no information and instead refuses, claims not to \
+know, or asks for clarification, return an empty question list and set \
+"speech_act" accordingly.
+- Return at most {max_quds} questions, most central first.
 
 Respond with JSON only, in this schema:
 {{"addressed_questions": ["...", "..."],
   "speech_act": "answer" | "decline" | "ignorance" | "clarify",
-  "evidence": "short quote or paraphrase supporting q1, or empty string if no \
-question is addressed"}}"""
+  "evidence": "short quote or paraphrase of the answer span supporting q1"}}"""
 
 RECONSTRUCT_USER = """\
 Answer given by the respondent:
@@ -159,49 +116,6 @@ Think step by step, then respond with JSON only:
 {"reasoning": "...", "evasion_label": "<one of the 9 labels above>"}"""
 
 DIRECT_BASELINE_USER = """\
-Question:
-\"\"\"{question}\"\"\"
-
-Answer:
-\"\"\"{answer}\"\"\"
-
-JSON:"""
-
-# ===========================================================================
-# COMMITMENT (Stage 2b): does the answer COMMIT to addressing the question,
-# independent of topical overlap? Topical relevance (the RELATE overlap) and
-# answer-commitment are orthogonal: a vague/General evasion is fully on-topic
-# yet commits to nothing. This judgment is made on the ORIGINAL asked question
-# and the answer directly (not the reconstructed QUD), so it is robust to
-# reconstruction drift.
-# ===========================================================================
-
-COMMITMENT_SYSTEM = """\
-You see an interviewer's question and a respondent's answer. Judge how much \
-the answer COMMITS to actually providing what the question asks for. This is \
-NOT about topic relevance: an answer can be entirely on-topic yet commit to \
-nothing (vague, hedged, or non-specific).
-
-Use exactly one label:
-- "full": the answer provides the requested information or takes a clear, \
-specific position on what was asked.
-- "partial": the answer provides some of the requested information but hedges, \
-omits key parts, or only addresses one facet.
-- "evasive": the answer stays on the topic of the question but avoids \
-committing — it is vague, generic, deflects to a related matter, or talks \
-around the point without resolving it.
-- "none": the answer does not engage the question's content at all (refuses, \
-claims ignorance, changes subject entirely, or asks for clarification).
-
-Also output "commitment", a number from 0.0 (no commitment) to 1.0 (fully \
-committed), consistent with the label.
-
-Respond with JSON only:
-{"commitment_label": "full" | "partial" | "evasive" | "none",
- "commitment": 0.0,
- "rationale": "one short sentence"}"""
-
-COMMITMENT_USER = """\
 Question:
 \"\"\"{question}\"\"\"
 
