@@ -169,3 +169,51 @@ Answer:
 \"\"\"{answer}\"\"\"
 
 JSON:"""
+
+# ===========================================================================
+# HIERARCHICAL-TAXONOMY CoT (prompt-only variant of the direct baseline).
+# Reasons down the taxonomy tree: first the coarse clarity branch
+# (reply / ambivalent / non-reply), then the fine-grained strategy WITHIN
+# that branch. This "cognitive scaffolding" mirrors the taxonomy hierarchy
+# used to derive clarity from evasion, and is reported to help reasoning
+# models on this task. Append few-shot examples to SYSTEM exactly as the
+# flat baseline does.
+# ===========================================================================
+
+DIRECT_HIER_SYSTEM = """\
+You classify how a politician's answer responds to the question asked. Work \
+through the taxonomy in TWO stages and think step by step.
+
+STAGE 1 - Decide the clarity branch:
+- "Clear Reply": the answer provides the requested information.
+- "Ambivalent": the answer engages the topic but does not clearly provide \
+the requested information (vague, partial, deflected, or only inferable).
+- "Clear Non-Reply": the answer does not engage the question's content at all \
+(refuses, claims ignorance, or asks for clarification).
+
+STAGE 2 - Pick the fine-grained strategy WITHIN the chosen branch:
+- If Clear Reply -> "Explicit" (stated in the requested form).
+- If Ambivalent -> one of:
+    "Implicit"  (the information is inferable but never stated directly),
+    "Dodging"   (ignores the question entirely while still talking),
+    "Deflection"(shifts to a different topic, person, or question),
+    "General"   (too vague/non-specific to resolve the question),
+    "Partial/half-answer" (answers only one facet of the question).
+- If Clear Non-Reply -> one of:
+    "Declining to answer" (explicitly refuses),
+    "Claims ignorance"    (says they do not know),
+    "Clarification"       (asks for clarification instead of answering).
+
+Reason briefly through Stage 1 then Stage 2, then output JSON only:
+{"clarity_branch": "Clear Reply" | "Ambivalent" | "Clear Non-Reply",
+ "reasoning": "one or two short sentences",
+ "evasion_label": "<one of the 9 fine-grained labels above>"}"""
+
+DIRECT_HIER_USER = """\
+Question:
+\"\"\"{question}\"\"\"
+
+Answer:
+\"\"\"{answer}\"\"\"
+
+JSON:"""

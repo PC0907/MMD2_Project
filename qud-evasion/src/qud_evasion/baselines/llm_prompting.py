@@ -3,8 +3,12 @@
 The strategy class that dominated SemEval-2026 Task 6. Reimplemented as a
 comparison point: same backbone model as the QUD pipeline so that any
 gain is attributable to the QUD decomposition, not model choice.
-"""
 
+Supports two prompt styles via `prompt_style`:
+  - "flat"          : original 9-way CoT (DIRECT_BASELINE_*)
+  - "hierarchical"  : taxonomy-tree CoT (DIRECT_HIER_*), reasons clarity
+                      branch first, then fine-grained strategy.
+"""
 from __future__ import annotations
 
 import logging
@@ -14,7 +18,10 @@ import pandas as pd
 
 from ..data.taxonomy import EVASION_LABELS, clarity_from_evasion, normalize_evasion
 from ..qud.llm_client import LLMClient, parse_json
-from ..qud.prompts import DIRECT_BASELINE_SYSTEM, DIRECT_BASELINE_USER
+from ..qud.prompts import (
+    DIRECT_BASELINE_SYSTEM, DIRECT_BASELINE_USER,
+    DIRECT_HIER_SYSTEM, DIRECT_HIER_USER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,15 +49,24 @@ def run_direct_baseline(
     k_per_class: int = 1,
     seed: int = 13,
     batch_size: int = 256,
+    prompt_style: str = "flat",
 ) -> pd.DataFrame:
-    system = DIRECT_BASELINE_SYSTEM
+    if prompt_style == "hierarchical":
+        system_base, user_tmpl = DIRECT_HIER_SYSTEM, DIRECT_HIER_USER
+    elif prompt_style == "flat":
+        system_base, user_tmpl = DIRECT_BASELINE_SYSTEM, DIRECT_BASELINE_USER
+    else:
+        raise ValueError(f"Unknown prompt_style: {prompt_style!r}")
+
+    system = system_base
     if few_shot_train is not None:
         system = system + "\n\n" + _few_shot_block(few_shot_train, k_per_class, seed)
 
     users = [
-        DIRECT_BASELINE_USER.format(question=q, answer=a)
+        user_tmpl.format(question=q, answer=a)
         for q, a in zip(df["question"], df["interview_answer"])
     ]
+
     raw: list[str] = []
     for s in range(0, len(users), batch_size):
         raw.extend(client.chat_batch(system, users[s:s + batch_size]))
@@ -64,12 +80,12 @@ def run_direct_baseline(
             preds.append("Dodging")  # neutral fallback on parse failure
             fallbacks += 1
     if fallbacks:
-        logger.warning("Direct baseline: %d/%d label parse fallbacks", fallbacks, len(preds))
+        logger.warning("Direct baseline (%s): %d/%d label parse fallbacks",
+                       prompt_style, fallbacks, len(preds))
 
     out = df[["example_id"]].copy()
     out["evasion_pred"] = preds
     out["clarity_pred"] = out["evasion_pred"].map(clarity_from_evasion)
-
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out.to_json(out_path, orient="records", lines=True)
