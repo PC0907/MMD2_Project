@@ -198,6 +198,7 @@ def main():
     model = FusionClassifier(args.model, len(TASK1_LABELS),
                              n_struct=len(STRUCT_COLS),
                              use_structural=bool(args.use_structural))
+    model=model.float()
 
     def metrics(eval_pred):
         logits, labels = eval_pred
