@@ -21,10 +21,9 @@ export HF_HOME=/home/s44srizv/MMD2_Project/qud-evasion/.hf_cache
 echo "=== GPU ==="
 nvidia-smi || true
 
-for name in flat_k1 hier_k1 flat_k3 hier_k3 flat_k0 hier_k0; do
-  echo "############## PROMPT VARIANT: $name ##############"
-  python -m qud_evasion.cli llm-baseline \
-    --config "configs/prompt_${name}.yaml" --split dev
+# the three hier configs — these will now actually use the hierarchical prompt
+for name in hier_k1 hier_k3 hier_k0; do
+  python -m qud_evasion.cli llm-baseline --config configs/prompt_${name}.yaml --split dev
 done
 
 echo "############## SWEEP DONE ##############"
