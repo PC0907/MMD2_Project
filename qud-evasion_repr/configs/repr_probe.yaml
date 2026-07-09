@@ -1,0 +1,52 @@
+# Phase 1: frozen-decoder representation classifiers.
+# Go/no-go gate: >=0.60 clarity dev macro-F1, >=0.34 evasion dev macro-F1.
+
+output_root: outputs/activations
+
+data:
+  # Point at your existing loader to guarantee identical preprocessing
+  # across arms, e.g. "qud_evasion.data.load:load_qevasion".
+  # null -> fall back to loading ailsntua/QEvasion from the HF hub.
+  loader: null
+  loader_kwargs: {}
+
+splits: [train, test]          # extract both; test stays untouched until the end
+
+models:
+  - Qwen/Qwen3-4B-Instruct-2507
+  - Qwen/Qwen3-8B
+  # second family for the robustness replication (run after the gate passes):
+  # - meta-llama/Llama-3.1-8B-Instruct
+  # scale point (Phase 2):
+  # - Qwen/Qwen3-32B
+
+extraction:
+  template: "Question: {question}\nAnswer: {answer}"
+  use_full_question: false     # isolated sub-question (matches label semantics)
+  use_chat_template: false
+  max_length: 1024             # check truncated_examples in index.json; raise if >2-3%
+  batch_size: 8
+  dtype: bfloat16
+  device_map: auto
+  token_layers: []             # e.g. [20, 24, 28] to enable attention pooling later
+
+tasks: [clarity, evasion]
+poolings: [last, mean_all, mean_answer]
+seeds: [42, 13, 7]
+
+dev_fraction: 0.10             # interview-level split; swap in data/splits.py to
+split_seed: 42                 # reproduce the report's exact partition
+
+probe:
+  C: 1.0
+  class_weight: null           # set "balanced" for the evasion-weighted variant
+
+head:
+  hidden: 256
+  epochs: 30
+  lr: 1.0e-3
+  batch_size: 64
+  weight_decay: 1.0e-2
+
+controls:
+  pooling: last
