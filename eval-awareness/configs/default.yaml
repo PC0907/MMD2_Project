@@ -1,0 +1,40 @@
+# ---- Model ----
+model_name: "Qwen/Qwen2.5-7B-Instruct"   # start small; see README model ladder
+dtype: "bfloat16"
+device_map: "auto"
+
+# ---- Activation extraction ----
+# Which residual-stream layers to hook. "all" or a list like [8, 12, 16, 20].
+layers: "all"
+# Token position(s) whose activations we save. "last" is standard for probing.
+token_position: "last"
+batch_size: 8
+max_length: 2048
+
+# ---- Data ----
+scenario_dir: "data/scenarios"
+generated_dataset: "results/dataset.jsonl"
+activations_dir: "results/activations"
+
+# ---- Probes ----
+probe:
+  type: "logistic"        # logistic | linear_svm
+  C: 0.1                  # inverse regularization; sweep this
+  n_folds: 5
+  leave_one_category_out: true
+  seed: 0
+
+# ---- Steering ----
+steering:
+  # layer chosen from probe results (best-accuracy mid layer is a good default)
+  layer: 16
+  # multipliers applied to the unit-norm awareness direction
+  alphas: [-8.0, -4.0, 0.0, 4.0, 8.0]
+  max_new_tokens: 512
+  temperature: 0.7
+  n_samples_per_prompt: 5
+
+# ---- Output ----
+results_dir: "results"
+figures_dir: "results/figures"
+seed: 0
