@@ -1,0 +1,40 @@
+# Default experiment configuration.
+
+model:
+  name: meta-llama/Llama-3.1-8B-Instruct
+  dtype: bfloat16
+  device_map: auto
+  # Residual stream layers to capture. For 8B (32 layers) sweep a spread;
+  # narrow after the first layer-sweep run.
+  layers: [8, 12, 16, 20, 24, 28]
+  # Which token positions to pool over per step:
+  #   last  -> final token of the step's observation/response
+  #   mean  -> mean over the step's tokens
+  pooling: mean
+
+collection:
+  suites: [workspace, travel, banking, slack]   # AgentDojo v1 suites
+  attacks: [direct, ignore_previous, important_instructions, tool_knowledge]
+  include_benign: true          # benign episodes (no injection) as negatives
+  max_steps: 15
+  out_dir: data/activations
+  seed: 0
+
+dataset:
+  # Label targets:
+  #   injection_present : observation at step t contains injected instructions
+  #   attack_furthering : the model's action at step t advances the injected goal
+  targets: [injection_present, attack_furthering]
+  split: loao                   # loao (leave-one-attack-out) | loso (suite) | random
+  val_fraction: 0.15
+
+probe:
+  kind: logistic                # logistic | massmean | torch_linear
+  C: 1.0                        # inverse L2 strength for logistic
+  epochs: 20                    # torch probe only
+  lr: 1.0e-3
+  batch_size: 512
+
+eval:
+  fpr_operating_points: [0.01, 0.05]
+  out_dir: results
